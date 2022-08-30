@@ -7,7 +7,7 @@ classdef LinearSolver < handle
         nsaved = 2;                     % Number of stiffness matricies to save
         
         % CA data
-        iterationsSinceFactorization;   % Number of iterations since factorization
+        itssf;                          % Number of iterations since factorization
         forceFactorization = 1;         % Boolean controlling if a factorization should be forced
         maxits;                         % Maximum number of opt steps before factorization
         nbasis;                         % Number of basis vectors
@@ -19,11 +19,11 @@ classdef LinearSolver < handle
     methods
         function obj = LinearSolver(maxits, nbasis, nsteps)
             obj.maxits = maxits;
-            obj.iterationsSinceFactorization = maxits;
+            obj.itssf = maxits;
             
             obj.nbasis  = nbasis;
-            obj.statistics = struct('ncalls', 0, ...
-                                    'factorizations', 0);
+            obj.statistics = struct('calls', 0, ...
+                                    'facts', 0);
                                 
             obj.nsteps = nsteps;
         end
@@ -33,7 +33,7 @@ classdef LinearSolver < handle
             % SOLVEQ solves the problem Ku = f with boundary conditions bc.
             % LinearSolver stores a number of stiffness matricies,
             % corresponding to the iteration number n.
-            obj.statistics.ncalls = obj.statistics.ncalls + 1;
+            obj.statistics.calls = obj.statistics.calls + 1;
             
             % Default n is the last one
             if nargin < 5
@@ -66,12 +66,11 @@ classdef LinearSolver < handle
             
             % If direct solvers is used maxits is 1, otherwise CA is used
             if obj.forceFactorization || ...
-                    obj.iterationsSinceFactorization >= obj.maxits || ...
+                    obj.itssf >= obj.maxits || ...
                     n <= obj.nsteps - obj.nsaved || ...
                     n > length(obj.Kold)
-                obj.iterationsSinceFactorization = 0;
-                obj.statistics.factorizations = ...
-                    obj.statistics.factorizations + 1;
+                obj.itssf = 0;
+                obj.statistics.facts = obj.statistics.facts + 1;
                 
                 % Try to do a cholesky, if the matrix is neg def do lu
                 % instead.
@@ -116,16 +115,10 @@ classdef LinearSolver < handle
             x(nf) = xf;
         end
         
-        function stats = getStats(obj)
-            % Fetch statistics
-            stats = obj.statistics;
-            
-            % Reset statistics
-            obj.statistics.ncalls = 0;
-            obj.statistics.factorizations = 0;
-            obj.forceFactorization = 0;
-            obj.iterationsSinceFactorization = ...
-                obj.iterationsSinceFactorization + 1;
+        function flush(obj)
+            obj.statistics.calls = 0;
+            obj.statistics.facts = 0;
+            obj.itssf = obj.itssf + 1;
         end
         
     end

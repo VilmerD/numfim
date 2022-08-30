@@ -29,7 +29,7 @@ while ~PROBLEM_SOLVED
     end
     
     % Attempt a solution at u0n
-    [u, P, ef, es, NR_FLAG, NSTEP, N_INNER, relres] = ...
+    [u, P, ef, es, NR_FLAG, LOAD_STEPS, N_INNER, RRES] = ...
         NRDC(Kz, rz, sfun, bc, u0n, NSTEPS, options);
     
     % Check results

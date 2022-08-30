@@ -1,7 +1,6 @@
 function [u, P, efn, esn, varargout] = NRDC(Kfun, rfun, sfun, bc, u0, NMAX, ...
-    linear_solver)
-% NRDC solves the nonlinear problem rfun = 0 with initial guess u0 using a
-% newton-raphson scheme
+    solver)
+
 
 % Computes the displacement controlled response of the system
 ABS_MAX = 1e12;
@@ -15,8 +14,6 @@ nf(np) = [];
 
 % How much to load each step
 [NSTEP, dustep] = computeNumberSteps(bc, u0, NMAX);
-load_increment = [np dustep];
-load_correct = [np zeros(size(np))];
 
 % Initiating quantities
 un = u0;
@@ -25,35 +22,41 @@ P = zeros(size(u0, 1), NMAX);
 
 N_INNER_TOT = 0;
 [efn, esn] = sfun(u0);
-resn = rfun(efn, esn);
+resn = rfun(efn, esn, 0);
 for n = (NMAX - NSTEP + 1):NMAX
+    % Computing load
+    load = [np dustep];
+    
     % Displacement increment
     Kn = Kfun(efn, esn);
-    dun = linear_solver(Kn, -resn, load_increment, n);
-    N_INNER = 1;
+    dun = options.solver.solveq(Kn, -resn, load, n);
     
     % Updating displacement field and computing reaction forces
     un = un + dun;
     [efn, esn] = sfun(un);
-    resn = rfun(efn, esn);
+    resn = rfun(efn, esn, 0);
     rfree = norm(resn(nf));
     rtot = norm(resn);
     
     % Correcting until convergance
+    N_INNER = 1;
     while rfree/rtot > RTOL
+        % Load should be zero at prescribed nodes
+        load = [np zeros(size(np))];
+        
         % Computing new estimate
         Kn = Kfun(efn, esn);
-        dun = linear_solver(Kn, -resn, load_correct, n);
-        N_INNER = N_INNER + 1;
+        dun = options.solver.solveq(Kn, -resn, load, n);
         
         % Updating displacement field and computing reaction forces
         un = un + dun;
         [efn, esn] = sfun(un);
-        resn = rfun(efn, esn);
+        resn = rfun(efn, esn, 0);
         rfree = norm(resn(nf));
         rtot = norm(resn);
         
         % Checking if the iteration should be terminated
+        N_INNER = N_INNER + 1;
         if N_INNER > N_INNER_MAX || rfree > ABS_MAX || ~isreal(resn)
             if norm(u0) == 0
                 % Started from zero and couldn't converge, bad
@@ -64,8 +67,7 @@ for n = (NMAX - NSTEP + 1):NMAX
             end
             
             % Packaging data
-            N_INNER_TOT = N_INNER_TOT + N_INNER;
-            argout = {flag, N_INNER_TOT, rfree/rtot};
+            argout = {flag, NSTEP, N_INNER_TOT, rfree/rtot};
             nargout_extra = nargout - 4;
             varargout = argout(1:nargout_extra);
             return
