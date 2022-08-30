@@ -8,7 +8,7 @@ classdef LinearSolver < handle
         
         % CA data
         iterationsSinceFactorization;   % Number of iterations since factorization
-        forceFactorization = 1;         % Boolean controlling if a factorization should be forced
+        forceFactorization = 0;         % Boolean controlling if a factorization should be forced
         maxits;                         % Maximum number of opt steps before factorization
         nbasis;                         % Number of basis vectors
         
@@ -100,7 +100,7 @@ classdef LinearSolver < handle
                 
                 % Generating basis vectors
                 B = CASBON(R, dK, Kff, b, obj.nbasis);
-                V = B{end};
+                V = B{end}
                 
                 % Projecting b onto the basis for the solution
                 z = V'*b;

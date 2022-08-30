@@ -22,6 +22,14 @@ function [u, Q, R, varargout] = msolveq(K, f, bc, Kold, R, s)
 %       orthonormalization (CASBON)
 %
 
+% If bc is empty just solve directly
+if isempty(bc)
+    R = chol(K);
+    u = R\(R'\f);
+    Q = f;
+    return
+end
+
 % Split up the system into free and prescribed nodes
 ndof = size(K, 1);
 nf = (1:ndof)';

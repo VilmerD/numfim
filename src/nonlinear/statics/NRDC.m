@@ -1,4 +1,5 @@
-function [u, P, efn, esn, varargout] = NRDC(Kfun, rfun, sfun, bc, u0, NMAX)
+function [u, P, efn, esn, varargout] = NRDC(Kfun, rfun, sfun, bc, u0, NMAX, ...
+    options)
 % Computes the displacement controlled response of the system
 ABS_MAX = 1e12;
 N_INNER_MAX = 10;
@@ -26,7 +27,7 @@ for n = (NMAX - NSTEP + 1):NMAX
     
     % Displacement increment
     Kn = Kfun(efn, esn);
-    dun = msolveq(Kn, -resn, load);
+    dun = options.solver.solveq(Kn, -resn, load, n);
     
     % Updating displacement field and computing reaction forces
     un = un + dun;
@@ -43,7 +44,7 @@ for n = (NMAX - NSTEP + 1):NMAX
         
         % Computing new estimate
         Kn = Kfun(efn, esn);
-        dun = msolveq(Kn, -resn, load);
+        dun = options.solver.solveq(Kn, -resn, load, n);
         
         % Updating displacement field and computing reaction forces
         un = un + dun;
