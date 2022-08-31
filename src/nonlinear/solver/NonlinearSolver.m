@@ -38,10 +38,7 @@ classdef NonlinearSolver < handle
             obj.linear_solver = solver;
             
             % Set up stats
-            obj.statistics = struct(...
-                'N_INNER_TOT', {}, ...
-                'N_RESTARTS', {}, ...
-                'LINEQ_STATS', {});
+            obj.statistics;
         end
         
         function [u, P, ef, es] = solve(obj, znew, zold, tot_load)
@@ -122,10 +119,10 @@ classdef NonlinearSolver < handle
                 
             end
             
-            obj.statistics(end + 1) = struct(...
+            obj.statistics = struct(...
                 'N_INNER_TOT', N_INNER_TOT, ...
                 'N_RESTARTS', RESTARTS, ...
-                'LINEQ_STATS', obj.linear_solver.statistics);
+                'START_AT_ZERO', START_AT_ZERO);
             
             % Add the last nonzero vectors of u into uold
             FIRST_NONZERO = find(normAlong(u, 2, 1) ~= 0, 1, 'first');

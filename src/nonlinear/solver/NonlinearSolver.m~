@@ -38,11 +38,7 @@ classdef NonlinearSolver < handle
             obj.linear_solver = solver;
             
             % Set up stats
-            obj.statistics = struct('
-                        obj.statistics{end + 1} = struct(...
-                'N_INNER_TOT', N_INNER_TOT, ...
-                'N_RESTARTS', RESTARTS, ...
-                'LINEQ_STATS', obj.linear_solver.statistics);
+            obj.statistics;
         end
         
         function [u, P, ef, es] = solve(obj, znew, zold, tot_load)
@@ -66,7 +62,6 @@ classdef NonlinearSolver < handle
                 
                 % Get initial guess
                 if ~START_AT_ZERO && RESTARTS <= obj.RESTARTS_MAX
-                    RESTARTS = RESTARTS + 1;
                     u0n = obj.uold(:, end - RESTARTS);
                 else
                     START_AT_ZERO = 1;
@@ -83,7 +78,7 @@ classdef NonlinearSolver < handle
                 % Check results
                 if NR_FLAG == 0
                     % Solution found! Get out!
-                    PROBLEM_SOLVED = true;
+                    PROBLEM_SOLVED = 1;
                     
                 elseif NR_FLAG == 1 && RESTARTS < obj.RESTARTS_MAX
                     % Restart with other initial guess
@@ -93,11 +88,11 @@ classdef NonlinearSolver < handle
                     % Try iterating through z instead
                     dzi = dz*obj.Z_GRANULARITY;
                     ui = obj.uold(:, end);
-                    for i = 1:nzsteps
+                    for i = 1:1/obj.Z_GRANULARITY
                         % Increment z and get corresponding stiffness
                         zi = zold + i*dzi;
-                        Kzi = @(ef, es) K(ef, es, zi);
-                        rzi = @(ef, es, fext) r(ef, es, fext, zi);
+                        Kzi = @(ef, es) obj.model.K(ef, es, zi);
+                        rzi = @(ef, es) obj.model.fint(ef, es, zi);
                         
                         % Attempt a solution
                         [u, P, ef, es, NR_FLAG, N_INNER] = NRDC(Kzi, rzi, sfun, ...
@@ -105,13 +100,16 @@ classdef NonlinearSolver < handle
                         N_INNER_TOT = N_INNER_TOT + N_INNER;
                         
                         % Check if problem was solved, if not exit
-                        if NR_FLAG ~= 1
-                            ui = u(:, end);
-                        else
-                            break;
-                        end
+                        if NR_FLAG ~= 0; break; end
+                        ui = u(:, end);
                     end
-                    PROBLEM_SOLVED = true;
+                    
+                    % Check if stepping in z solved the issues
+                    if NR_FLAG == 0
+                        PROBLEM_SOLVED = 1;
+                    else
+                        RESTARTS = RESTARTS + 1;
+                    end
                     
                 elseif START_AT_ZERO
                     % Started from zero, and coulnd't solve problem. Need
@@ -121,11 +119,14 @@ classdef NonlinearSolver < handle
                 
             end
             
-            obj.statistics{end + 1} = struct(...
+            obj.statistics = struct(...
                 'N_INNER_TOT', N_INNER_TOT, ...
                 'N_RESTARTS', RESTARTS, ...
-                'LINEQ_STATS', obj.linear_solver.statistics);
-            obj.uold = u;
+                'START_AT_ZERO');
+            
+            % Add the last nonzero vectors of u into uold
+            FIRST_NONZERO = find(normAlong(u, 2, 1) ~= 0, 1, 'first');
+            obj.uold(:, FIRST_NONZERO:end) = u(:, FIRST_NONZERO:end);
             
             % If solution is still not found there is a problem...
             if ~PROBLEM_SOLVED
