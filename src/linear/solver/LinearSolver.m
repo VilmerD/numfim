@@ -3,29 +3,29 @@ classdef LinearSolver < handle
         % Storing old factorizations and solutions
         Rold;                           % Old cholesky factorizations
         Kold;                           % Old stiffness matricies
-        nsteps;                         % Number of steps for each equilibrium solve
-        nsaved = 2;                     % Number of stiffness matricies to save
+        NSTEPS;                         % Number of steps for each equilibrium solve
+        NSAVED;                         % Number of stiffness matricies to save
         
         % CA data
-        itssf;                          % Number of iterations since factorization
+        ITSSF;                          % Number of iterations since factorization
         forceFactorization = 1;         % Boolean controlling if a factorization should be forced
-        maxits;                         % Maximum number of opt steps before factorization
-        nbasis;                         % Number of basis vectors
+        MAXITS;                         % Maximum number of opt steps before factorization
+        NBASIS;                         % Number of basis vectors
         
         % Solver statistics such as number of factorizations and number of calls
         statistics;                         
     end
     
     methods
-        function obj = LinearSolver(maxits, nbasis, nsteps)
-            obj.maxits = maxits;
-            obj.itssf = maxits;
+        function obj = LinearSolver(NBASIS, MAXITS, NSAVED, NSTEPS)
+            obj.MAXITS = MAXITS;
+            obj.ITSSF = MAXITS;
             
-            obj.nbasis  = nbasis;
-            obj.statistics = struct('calls', 0, ...
-                                    'facts', 0);
+            obj.NBASIS  = NBASIS;
+            obj.statistics = struct('CALLS', 0, 'FACTS', 0);
                                 
-            obj.nsteps = nsteps;
+            obj.NSTEPS = NSTEPS;
+            obj.NSAVED = NSAVED;
         end
         
         % Solves the equilibrium equations given by K, f, and bc
@@ -33,7 +33,7 @@ classdef LinearSolver < handle
             % SOLVEQ solves the problem Ku = f with boundary conditions bc.
             % LinearSolver stores a number of stiffness matricies,
             % corresponding to the iteration number n.
-            obj.statistics.calls = obj.statistics.calls + 1;
+            obj.statistics.CALLS = obj.statistics.CALLS + 1;
             
             % Default n is the last one
             if nargin < 5
@@ -66,17 +66,17 @@ classdef LinearSolver < handle
             
             % If direct solvers is used maxits is 1, otherwise CA is used
             if obj.forceFactorization || ...
-                    obj.itssf >= obj.maxits || ...
-                    n <= obj.nsteps - obj.nsaved || ...
+                    obj.ITSSF >= obj.MAXITS || ...
+                    n <= obj.NSTEPS - obj.NSAVED || ...
                     n > length(obj.Kold)
-                obj.itssf = 0;
-                obj.statistics.facts = obj.statistics.facts + 1;
+                obj.ITSSF = 1;
+                obj.statistics.FACTS = obj.statistics.FACTS + 1;
                 
                 % Try to do a cholesky, if the matrix is neg def do lu
                 % instead.
                 try
                     R = chol(Kff);
-                    if n > obj.nsteps - obj.nsaved
+                    if n > obj.NSTEPS - obj.NSAVED
                         obj.Kold{n} = Kff;
                         obj.Rold{n} = R;
                     end
@@ -94,11 +94,12 @@ classdef LinearSolver < handle
                 
             else
                 % Reusing previous factorization R of the submatrix A
+                obj.ITSSF = obj.ITSSF + 1;
                 R = obj.Rold{n};
                 dK = Kff - obj.Kold{n};
                 
                 % Generating basis vectors
-                B = CASBON(R, dK, Kff, b, obj.nbasis);
+                B = CASBON(R, dK, Kff, b, obj.NBASIS);
                 V = B{end};
                 
                 % Projecting b onto the basis for the solution
@@ -116,9 +117,8 @@ classdef LinearSolver < handle
         end
         
         function flush(obj)
-            obj.statistics.calls = 0;
-            obj.statistics.facts = 0;
-            obj.itssf = obj.itssf + 1;
+            obj.statistics.CALLS = 0;
+            obj.statistics.FACTS = 0;
         end
         
     end

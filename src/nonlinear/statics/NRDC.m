@@ -14,7 +14,7 @@ nf = 1:size(u0, 1);
 nf(np) = [];
 
 % How much to load each step
-[NSTEP, dustep] = computeNumberSteps(bc, u0, NMAX);
+[N_LOAD_STEPS, dustep] = computeNumberSteps(bc, u0, NMAX);
 load_increment = [np dustep];
 load_correct = [np zeros(size(np))];
 
@@ -26,7 +26,7 @@ P = zeros(size(u0, 1), NMAX);
 N_INNER_TOT = 0;
 [efn, esn] = sfun(u0);
 resn = rfun(efn, esn);
-for n = (NMAX - NSTEP + 1):NMAX
+for n = (NMAX - N_LOAD_STEPS + 1):NMAX
     % Displacement increment
     Kn = Kfun(efn, esn);
     dun = linear_solver(Kn, -resn, load_increment, n);
@@ -65,7 +65,7 @@ for n = (NMAX - NSTEP + 1):NMAX
             
             % Packaging data
             N_INNER_TOT = N_INNER_TOT + N_INNER;
-            argout = {flag, N_INNER_TOT, rfree/rtot};
+            argout = {flag, N_INNER_TOT, N_LOAD_STEPS, rfree/rtot};
             nargout_extra = nargout - 4;
             varargout = argout(1:nargout_extra);
             return
@@ -79,7 +79,7 @@ end
 
 % Packaging data
 flag = 0;
-argout = {flag, N_INNER_TOT, rfree/rtot};
+argout = {flag, N_INNER_TOT, N_LOAD_STEPS, rfree/rtot};
 nargout_extra = nargout - 4;
 varargout = argout(1:nargout_extra);
 end

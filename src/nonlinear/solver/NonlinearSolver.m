@@ -9,8 +9,9 @@ classdef NonlinearSolver < handle
         linear_solver;
         
         % Solver options
-        RESTARTS_MAX;
+        TOT_LOAD;
         LOAD_STEPS;
+        RESTARTS_MAX;
         Z_GRANULARITY;
         
         % Solver data
@@ -21,15 +22,17 @@ classdef NonlinearSolver < handle
     end
     
     methods
-        function obj = NonlinearSolver(model, LOAD_STEPS, solver)
+        function obj = NonlinearSolver(model, solver, TOT_LOAD, LOAD_STEPS, ...
+                RESTARTS_MAX, Z_GRANULARITY)
             % Put model
             obj.model = model;
             obj.uold = zeros(model.ndof, LOAD_STEPS);
             
             % Initialize values
-            obj.RESTARTS_MAX = 3;
+            obj.TOT_LOAD = TOT_LOAD;
+            obj.RESTARTS_MAX = RESTARTS_MAX;
             obj.LOAD_STEPS = LOAD_STEPS;
-            obj.Z_GRANULARITY = 0.25;
+            obj.Z_GRANULARITY = Z_GRANULARITY;
             
             % Use default linear solver if none specified
             if nargin < 1
@@ -41,7 +44,7 @@ classdef NonlinearSolver < handle
             obj.statistics;
         end
         
-        function [u, P, ef, es] = solve(obj, znew, zold, tot_load)
+        function [u, P, ef, es] = solve(obj, znew, zold)
             % Give pointer to function for ease
             solveq_ptr = @(K, f, bc, n) obj.linear_solver.solveq(K, f, bc, n);
             
@@ -49,7 +52,9 @@ classdef NonlinearSolver < handle
             PROBLEM_SOLVED = 0;
             START_AT_ZERO = 0;
             RESTARTS = 0;
+            TOT_LOAD_STEPS = 0;
             N_INNER_TOT = 0;
+            ATTEMPT_Z_STEP = 0;
             
             % Initialize stiffness matrix etc
             dz = znew - zold;
@@ -61,19 +66,52 @@ classdef NonlinearSolver < handle
             while ~PROBLEM_SOLVED
                 
                 % Get initial guess
-                if ~START_AT_ZERO && RESTARTS <= obj.RESTARTS_MAX
+                if RESTARTS < obj.RESTARTS_MAX
                     u0n = obj.uold(:, end - RESTARTS);
-                else
-                    START_AT_ZERO = 1;
+                    
+                elseif ATTEMPT_Z_STEP
+                    u0n = obj.uold(:, end);
+                    
+                elseif START_AT_ZERO
                     u0n = zeros(size(obj.uold, 1), 1);
                     obj.linear_solver.forceFactorization = 1;
                 end
                 
-                % Attempt a solution at u0n
-                [u, P, ef, es, NR_FLAG, N_INNER] = ...
-                    NRDC(Kz, rz, sfun, tot_load, u0n, obj.LOAD_STEPS, ...
-                    solveq_ptr);
-                N_INNER_TOT = N_INNER_TOT + N_INNER;
+                % Try to solve the problem
+                if ~ATTEMPT_Z_STEP
+                    % By stepping in u
+                    [u, P, ef, es, NR_FLAG, N_INNER, N_LOAD_STEPS] = ...
+                        NRDC(Kz, rz, sfun, obj.TOT_LOAD, u0n, obj.LOAD_STEPS, ...
+                        solveq_ptr);
+                    N_INNER_TOT = N_INNER_TOT + N_INNER;
+                    TOT_LOAD_STEPS = TOT_LOAD_STEPS + N_LOAD_STEPS;
+                else
+                    % By stepping in z, starting at last solution u
+                    dzi = dz*obj.Z_GRANULARITY;
+                    ui = u0n;
+                    for i = 1:1/obj.Z_GRANULARITY
+                        % Increment z and get corresponding stiffness
+                        zi = zold + i*dzi;
+                        Kzi = @(ef, es) obj.model.K(ef, es, zi);
+                        rzi = @(ef, es) obj.model.fint(ef, es, zi);
+                        
+                        % Attempt a solution
+                        [u, P, ef, es, NR_FLAG, N_INNER, N_LOAD_STEPS] = ...
+                            NRDC(Kzi, rzi, sfun, obj.TOT_LOAD, ui, ...
+                            obj.LOAD_STEPS, solveq_ptr);
+                        N_INNER_TOT = N_INNER_TOT + N_INNER;
+                        TOT_LOAD_STEPS = TOT_LOAD_STEPS + N_LOAD_STEPS;
+                        
+                        % Check if problem was solved, if not exit
+                        if NR_FLAG ~= 0; break; end
+                        ui = u(:, end);
+                    end
+                    
+                    % Check if stepping in z solved the issues
+                    if NR_FLAG == 0
+                        PROBLEM_SOLVED = 1;
+                    end
+                end
                 
                 % Check results
                 if NR_FLAG == 0
@@ -84,34 +122,15 @@ classdef NonlinearSolver < handle
                     % Restart with other initial guess
                     RESTARTS = RESTARTS + 1;
                     
-                elseif NR_FLAG == 1 && RESTARTS == obj.RESTARTS_MAX
+                elseif NR_FLAG == 1 && ~ATTEMPT_Z_STEP && obj.Z_GRANULARITY < 1
                     % Try iterating through z instead
-                    dzi = dz*obj.Z_GRANULARITY;
-                    ui = obj.uold(:, end);
-                    for i = 1:1/obj.Z_GRANULARITY
-                        % Increment z and get corresponding stiffness
-                        zi = zold + i*dzi;
-                        Kzi = @(ef, es) obj.model.K(ef, es, zi);
-                        rzi = @(ef, es) obj.model.fint(ef, es, zi);
-                        
-                        % Attempt a solution
-                        [u, P, ef, es, NR_FLAG, N_INNER] = NRDC(Kzi, rzi, sfun, ...
-                            tot_load, ui, obj.LOAD_STEPS, solveq_ptr);
-                        N_INNER_TOT = N_INNER_TOT + N_INNER;
-                        
-                        % Check if problem was solved, if not exit
-                        if NR_FLAG ~= 0; break; end
-                        ui = u(:, end);
-                    end
+                    ATTEMPT_Z_STEP = 1;
                     
-                    % Check if stepping in z solved the issues
-                    if NR_FLAG == 0
-                        PROBLEM_SOLVED = 1;
-                    else
-                        RESTARTS = RESTARTS + 1;
-                    end
+                elseif NR_FLAG == 1 && RESTARTS == obj.RESTARTS_MAX
+                    % If restarting fails, start at zero
+                    START_AT_ZERO = 1;
                     
-                elseif START_AT_ZERO
+                else
                     % Started from zero, and coulnd't solve problem. Need
                     % to exit the solver.
                     break;
@@ -119,9 +138,12 @@ classdef NonlinearSolver < handle
                 
             end
             
+            % Save some stats
             obj.statistics = struct(...
                 'N_INNER_TOT', N_INNER_TOT, ...
                 'N_RESTARTS', RESTARTS, ...
+                'TOT_LOAD_STEPS', TOT_LOAD_STEPS, ...
+                'ATTEMPT_Z_STEP', ATTEMPT_Z_STEP, ...
                 'START_AT_ZERO', START_AT_ZERO);
             
             % Add the last nonzero vectors of u into uold
