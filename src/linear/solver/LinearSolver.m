@@ -13,7 +13,7 @@ classdef LinearSolver < handle
         NBASIS;                         % Number of basis vectors
         
         % Solver statistics such as number of factorizations and number of calls
-        statistics;                         
+        statistics;
     end
     
     methods
@@ -23,13 +23,13 @@ classdef LinearSolver < handle
             
             obj.NBASIS  = NBASIS;
             obj.statistics = struct('CALLS', 0, 'FACTS', 0);
-                                
+            
             obj.NSTEPS = NSTEPS;
             obj.NSAVED = NSAVED;
         end
         
         % Solves the equilibrium equations given by K, f, and bc
-        function [x, f] = solveq(obj, K, f, bc, n)
+        function [x, f, fact] = solveq(obj, K, f, bc, n)
             % SOLVEQ solves the problem Ku = f with boundary conditions bc.
             % LinearSolver stores a number of stiffness matricies,
             % corresponding to the iteration number n.
@@ -60,17 +60,17 @@ classdef LinearSolver < handle
             Kpf = K(np, nf);
             Kpp = K(np, np);
             
-            % Solve the reduced system Au = g - Bv
+            % Solving the reduced system Au = g - Bv
             ff = f(nf);
             b = ff - Kfp*xp;
             
-            % If direct solvers is used maxits is 1, otherwise CA is used
             if obj.forceFactorization || ...
                     obj.ITSSF >= obj.MAXITS || ...
                     n <= obj.NSTEPS - obj.NSAVED || ...
                     n > length(obj.Kold)
-                obj.ITSSF = 1;
+                obj.ITSSF = 0;
                 obj.statistics.FACTS = obj.statistics.FACTS + 1;
+                fact = 1;
                 
                 % Try to do a cholesky, if the matrix is neg def do lu
                 % instead.
@@ -93,8 +93,8 @@ classdef LinearSolver < handle
                 end
                 
             else
-                % Reusing previous factorization R of the submatrix A
-                obj.ITSSF = obj.ITSSF + 1;
+                % Reusing previous factorization of the submatrix A
+                fact = 0;
                 R = obj.Rold{n};
                 dK = Kff - obj.Kold{n};
                 
@@ -117,9 +117,25 @@ classdef LinearSolver < handle
         end
         
         function flush(obj)
+            obj.ITSSF = obj.ITSSF + 1;
             obj.statistics.CALLS = 0;
             obj.statistics.FACTS = 0;
         end
         
+        function printStats(obj)
+            fprintf('Linear Solver stats\n')
+            fprintf(repmat('-', 1, 35));
+            fprintf('\n');
+            
+            data = {obj.NBASIS, obj.MAXITS, obj.NSAVED, obj.NSTEPS};
+            names = {'Basis vectors', 'Max its', 'Num Saved', 'Num Steps'};
+            form = '%-18s %10i\n';
+            for k = 1:numel(data)
+                fprintf(form, names{k}, data{k});
+            end
+            
+            fprintf(repmat('-', 1, 35));
+            fprintf('\n');
+        end
     end
 end

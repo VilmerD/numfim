@@ -1,17 +1,19 @@
 function [u, P, efn, esn, varargout] = NRDC(Kfun, rfun, sfun, bc, u0, NMAX, ...
-    linear_solver)
+    linear_solver, RTOL)
 % NRDC solves the nonlinear problem rfun = 0 with initial guess u0 using a
 % newton-raphson scheme
 
 % Computes the displacement controlled response of the system
-ABS_MAX = 1e12;
+ABS_MAX = 1e18;
 N_INNER_MAX = 10;
-RTOL = 1e-9;
+if nargin < 8
+    RTOL = 1e-8;
+end
 
 % Free/Prescribed nodes
-np = bc(:, 1);
-nf = 1:size(u0, 1);
-nf(np) = [];
+np = bc(:, 1);              % Prescribed
+nf = 1:size(u0, 1);         % Free
+nf(np) = [];                
 
 % How much to load each step
 [N_LOAD_STEPS, dustep] = computeNumberSteps(bc, u0, NMAX);
@@ -22,6 +24,9 @@ load_correct = [np zeros(size(np))];
 un = u0;
 u = zeros(size(u0, 1), NMAX);
 P = zeros(size(u0, 1), NMAX);
+RFree = zeros(NMAX, N_INNER_MAX);
+RTot = zeros(NMAX, N_INNER_MAX);
+Facts = zeros(NMAX, N_INNER_MAX);
 
 N_INNER_TOT = 0;
 [efn, esn] = sfun(u0);
@@ -29,7 +34,7 @@ resn = rfun(efn, esn);
 for n = (NMAX - N_LOAD_STEPS + 1):NMAX
     % Displacement increment
     Kn = Kfun(efn, esn);
-    dun = linear_solver(Kn, -resn, load_increment, n);
+    [dun, ~, fn] = linear_solver(Kn, -resn, load_increment, n);
     N_INNER = 1;
     
     % Updating displacement field and computing reaction forces
@@ -38,12 +43,15 @@ for n = (NMAX - N_LOAD_STEPS + 1):NMAX
     resn = rfun(efn, esn);
     rfree = norm(resn(nf));
     rtot = norm(resn);
+    RFree(n, N_INNER) = rfree;
+    RTot(n, N_INNER) = rtot;
+    Facts(n, N_INNER) = fn;
     
     % Correcting until convergance
     while rfree/rtot > RTOL
         % Computing new estimate
         Kn = Kfun(efn, esn);
-        dun = linear_solver(Kn, -resn, load_correct, n);
+        [dun, ~, fn] = linear_solver(Kn, -resn, load_correct, n);
         N_INNER = N_INNER + 1;
         
         % Updating displacement field and computing reaction forces
@@ -52,20 +60,22 @@ for n = (NMAX - N_LOAD_STEPS + 1):NMAX
         resn = rfun(efn, esn);
         rfree = norm(resn(nf));
         rtot = norm(resn);
+        RFree(n, N_INNER) = rfree;
+        RTot(n, N_INNER) = rtot;
+        Facts(n, N_INNER) = fn;
         
         % Checking if the iteration should be terminated
-        if N_INNER > N_INNER_MAX || rfree > ABS_MAX || ~isreal(resn)
-            if norm(u0) == 0
-                % Started from zero and couldn't converge, bad
-                flag = 2;
-            else
-                % Started from some initial guess, not as bad
-                flag = 1;
-            end
-            
+        if N_INNER >= N_INNER_MAX || rfree > ABS_MAX || ~isreal(resn)
             % Packaging data
+            if N_INNER >= N_INNER_MAX
+                flag = 1;
+            elseif rfree > ABS_MAX
+                flag = 2;
+            elseif ~isreal(resn)
+                flag = 3;
+            end
             N_INNER_TOT = N_INNER_TOT + N_INNER;
-            argout = {flag, N_INNER_TOT, N_LOAD_STEPS, rfree/rtot};
+            argout = {flag, N_INNER_TOT, N_LOAD_STEPS, RFree, RTot, Facts};
             nargout_extra = nargout - 4;
             varargout = argout(1:nargout_extra);
             return
@@ -79,7 +89,7 @@ end
 
 % Packaging data
 flag = 0;
-argout = {flag, N_INNER_TOT, N_LOAD_STEPS, rfree/rtot};
+argout = {flag, N_INNER_TOT, N_LOAD_STEPS, RFree, RTot, Facts};
 nargout_extra = nargout - 4;
 varargout = argout(1:nargout_extra);
 end
@@ -92,12 +102,12 @@ function [nstep, step_new] = computeNumberSteps(bc, u0, nmax)
 % a set stepsize. Thus any nonzero element in bc can be chosen
 np = bc(:, 1);          % Prescribed nodes
 
-% Total load in:
+% Total load
 up = bc(:, 2);          % prescribed nodes
 upnz = up(up ~= 0);     % nonzero prescribed nodes
 upnz1 = upnz(1);        % first nonzero prescribed node
 
-% Initial disp in:
+% Initial disp
 u0p = u0(np);           % prescribed nodes
 u0pnz = u0p(u0p ~= 0);  % nonzero prescribed nodes
 
