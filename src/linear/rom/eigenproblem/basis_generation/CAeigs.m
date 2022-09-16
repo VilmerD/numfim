@@ -34,7 +34,8 @@ for k = 1:n
     KR = Vk'*K*Vk;
     MR = Vk'*M*Vk;
     
-    [yk, dk] = eigs(KR, MR, 1, 'smallestabs');  % Solve reduced model
+    [yk, dk] = eigs(KR, MR, 1, 'smallestabs', ...
+        'IsCholesky', false);  % Solve reduced model
     
     yk = yk/sqrt(yk'*MR*yk);                    % Normalize wrt mass matrix
     psik = Vk*yk;                               % Full solution
