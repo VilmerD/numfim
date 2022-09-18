@@ -5,12 +5,13 @@ classdef EigenSolver < handle
         nf;
         np;
         edof;
+        nelm;
         
         % CA variables
         factfreq = 10;
         itfact = 11;
         zfact;
-        alphtol = 10e-2;
+        alphtol = 5e-2;
         
         % Orthogonalization vars
         bool_orth = 1;
@@ -20,7 +21,7 @@ classdef EigenSolver < handle
         % Tolerance / stop criteria vars
         nbmax = 4;
         btol = 1e-6;
-        stol = 1e-1;
+        stol = 1e-4;
         
         % Data
         Kold;
@@ -33,11 +34,13 @@ classdef EigenSolver < handle
     end
     
     methods
-        function obj = EigenSolver(model, ne)
+        function obj = EigenSolver(model, ne, nb)
             obj.nf = model.nf;
             obj.np = model.np;
             obj.edof = model.edof;
+            obj.nelm = model.nelm;
             obj.ne = ne;
+            obj.nbmax = nb;
             
             obj.zfact = zerose(model.nelm, 1);
             
@@ -74,11 +77,10 @@ classdef EigenSolver < handle
         function [P, L, dLdz] = solveReduced(obj, K, M, K0, M0, zk)
             % Solving the reduced problem for each eigenvector
             DK = K-obj.Kold;
-            P = zeros(size(DK, 1), obj.ne);
-            Pfull = zeros(size(DK, 1), 1);
+            P([obj.nf; obj.np], 1) = 0;
             L = zeros(obj.ne);
             
-            dLdz = zeros(obj.ne, size(obj.edof, 1));
+            dLdz = zeros(obj.ne, length(zk));
             
             Iref = logical((zk > 0.1).*(zk < 0.95));
             Prs = cell(obj.ne, 1);
@@ -98,14 +100,14 @@ classdef EigenSolver < handle
                 % Solve reduced problem
                 Kr = V'*K*V;
                 Mr = V'*M*V;
-                [Pr, Lr] = eigs(Kr, Mr, 1, 'smallestabs', ...
-                    'IsCholesky', false);
+                [Pr, Lr] = eigs(Kr, Mr, 1, 'smallestabs', 'IsCholesky', false);
                 Pk = V*Pr/sqrt(Pr'*Mr*Pr);
                 Lk = Lr;
                 
                 % Compute sensitivities
-                Pfull(obj.nf, :) = Pk;
-                dLdzim1 = Deigen(Pfull, Lk, obj.edof, K0, M0);
+                P(obj.nf, k) = Pk;
+                P(obj.np, k) = 0;
+                dLdzi = Deigen(P, Lk, obj.edof, K0, M0);
                 
                 % Expand space until tolerance is met
                 space_accepted = false;
@@ -129,26 +131,26 @@ classdef EigenSolver < handle
                     Mr = V'*M*V;
                     [Pr, Lr] = eigs(Kr, Mr, 1, 'smallestabs');
                     Pk = V*Pr/sqrt(Pr'*Mr*Pr);
-                    Lk = Lr;
                     
                     % Compute sensitivities
-                    Pfull(obj.nf, :) = Pk;
-                    dLdzi = Deigen(Pfull, Lk, obj.edof, K0, M0);
+                    P(obj.nf, k) = Pk;
+                    P(obj.np, k) = 0;
+                    L(k, k) = Lr;
+                    dLdzip1 = Deigen(P, Lr, obj.edof, K0, M0);
                     
                     % Check condition
-                    relchange = abs((dLdzi(Iref) - dLdzim1(Iref))./dLdzim1(Iref));
+                    relchange = abs((dLdzip1(Iref)) - dLdzi(Iref))./dLdzi(Iref);
                     maxrelchange = max(relchange);
-                    space_accepted = maxrelchange <= obj.stol || ...
+                    space_accepted = ...
+                        maxrelchange <= obj.stol || ...
                         abs(Pr(end)) < obj.btol || ...
                         size(V, 2) >= obj.nbmax;
                     
                     % Update variables
-                    dLdzim1 = dLdzi;
+                    dLdzi = dLdzip1;
                     MRD(size(V, 2)) = maxrelchange;
                     fprintf('%12.8f %12.8f\n', maxrelchange, abs(Pr(end)));
                 end
-                P(:, k) = Pk;
-                L(k, k) = Lk;
                 dLdz(k, :) = dLdzi;
                 MRDs{k} = MRD;
                 Prs{k} = Pr;
@@ -158,6 +160,7 @@ classdef EigenSolver < handle
                     obj.vecorth(:, k) = Pk;
                 end
             end
+            
             obj.data(length(obj.data)+1) = cell2struct({Prs, MRDs}, obj.datapoints, 2);
         end
         
@@ -165,26 +168,37 @@ classdef EigenSolver < handle
             % Solve full problem
             obj.Rold = chol(K);
             obj.Kold = K;
-            [Pfree, Linv] = eigs(M, obj.Rold, obj.ne, 'largestabs', 'IsCholesky', true);
+            [Pr, Linv] = eigs(M, obj.Rold, obj.ne, 'largestabs', 'IsCholesky', true);
             L = diag(1./diag(Linv));
-            obj.Pold = Pfree;
+            obj.Pold = Pr;
             
-            % Normalize
+            % Normalize wrt mass matrix
             for k = 1:obj.ne
-                Pk = Pfree(:, k);
-                Pfree(:, k) = Pk/sqrt(Pk'*M*Pk);
+                Prk = Pr(:, k);
+                Pr(:, k) = Prk/sqrt(Prk'*M*Prk);
             end
-            P = zeros(size(K, 1), obj.ne);
-            P(obj.nf, :) = Pfree;
+            
+            % Make full
+            P(obj.nf, :) = Pr;
+            P(obj.np, :) = 0;
             
             % Compute sensitivities
             dLdz = Deigen(P, L, obj.edof, K0, M0);
             
             % Update vectors used in orthogonalization
             if strcmpi(obj.type_orth, 'old')
-                obj.vecorth = Pfree;
+                obj.vecorth = P;
             end
         end
+        
     end
     
+end
+
+function firstCA()
+
+end
+
+function nCA()
+
 end
