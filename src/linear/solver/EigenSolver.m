@@ -4,14 +4,16 @@ classdef EigenSolver < handle
         ne;
         nf;
         np;
+        ndof;
         edof;
+        enod;
         nelm;
         
         % CA variables
-        factfreq = 10;
+        factfreq = 5;
         itfact = 11;
         zfact;
-        alphtol = 5e-2;
+        alphtol = 10e-2;
         
         % Orthogonalization vars
         bool_orth = 1;
@@ -19,9 +21,9 @@ classdef EigenSolver < handle
         bool_shift = 0;
         
         % Tolerance / stop criteria vars
-        nbmax = 4;
-        btol = 1e-6;
-        stol = 1e-4;
+        nbmax = 6;
+        btol = 1e-3;
+        stol = 1e-3;
         
         % Data
         Kold;
@@ -31,21 +33,31 @@ classdef EigenSolver < handle
         
         datapoints = {'Pr', 'relDeltaMax'};
         data;
+        
+        
+        % Logging
+        logger;
     end
     
     methods
-        function obj = EigenSolver(model, ne, nb)
+        function obj = EigenSolver(model, ne)
+            % Problem and mesh data
             obj.nf = model.nf;
             obj.np = model.np;
             obj.edof = model.edof;
+            obj.enod = model.enod;
+            obj.ndof = model.ndof;
             obj.nelm = model.nelm;
             obj.ne = ne;
-            obj.nbmax = nb;
             
             obj.zfact = zerose(model.nelm, 1);
             
+            % Data to be saved
             emptydata = cell(1, numel(obj.datapoints));
             obj.data = cell2struct(emptydata, obj.datapoints, 2);
+            
+            % Logger
+            
         end
         
         
@@ -56,7 +68,7 @@ classdef EigenSolver < handle
             
             % Determine if CA should be used at all
             alph = dangle(zk, obj.zfact, false);
-            if alph < obj.alphtol && obj.itfact <= obj.factfreq
+            if alph < obj.alphtol && obj.itfact < obj.factfreq
                 % Build and solve reduced model
                 obj.itfact = obj.itfact+1;
                 [P, L, dLdz] = obj.solveReduced(Kff, Mff, K0, M0, zk);
@@ -68,93 +80,88 @@ classdef EigenSolver < handle
             end
             
             % Sorting eigenvalues
-            L = reshape(diag(L), obj.ne, 1);
-            [L, I] = sort(L, 'ascend');         % OBS ASCENDING ORDER
+            [Ld, I] = sort(diag(L), 'ascend');         % OBS ASCENDING ORDER
+            L = diag(Ld);
             P = P(:, I);
             dLdz = dLdz(I, :);
         end
         
-        function [P, L, dLdz] = solveReduced(obj, K, M, K0, M0, zk)
+        function [Pf, L, dLdz] = solveReduced(obj, K, M, K0, M0, zk)
             % Solving the reduced problem for each eigenvector
             DK = K-obj.Kold;
-            P([obj.nf; obj.np], 1) = 0;
+            Pf = zeros(obj.ndof, obj.ne);
+            Pfk = zeros(obj.ndof, 1);
             L = zeros(obj.ne);
             
             dLdz = zeros(obj.ne, length(zk));
             
-            Iref = logical((zk > 0.1).*(zk < 0.95));
+%             Iref = logical((zk > 0.1).*(zk < 0.95));
             Prs = cell(obj.ne, 1);
             MRDs = cell(obj.ne, 1);
             for k = 1:obj.ne
                 % Build first basis vector
-                u1 = cholsolve(obj.Rold, M*obj.Pold(:, k));
-                t1 = u1/sqrt(u1'*M*u1);
-                v1 = t1;
-                for j = 1:k-1
-                    voj = obj.vecorth(:, j);
-                    v1 = v1 - (t1'*M*voj)*voj;
-                end
-                V = v1;
-                tim1 = t1;
+                ui = cholsolve(obj.Rold, M*obj.Pold(:, k));
+                ti = ui/sqrt(ui'*M*ui);
+                vi = gsorth(ti, obj.vecorth(:, 1:(k-1)), M);
+                V = vi;
                 
                 % Solve reduced problem
                 Kr = V'*K*V;
                 Mr = V'*M*V;
-                [Pr, Lr] = eigs(Kr, Mr, 1, 'smallestabs', 'IsCholesky', false);
-                Pk = V*Pr/sqrt(Pr'*Mr*Pr);
-                Lk = Lr;
+                [Pr, Lk] = eigs(Kr, Mr, 1, 'smallestabs', 'IsCholesky', false);
+                Pk = V*Pr/sqrt(Pr'*Mr*Pr);      % Normalize wrt Mass matrix
                 
-                % Compute sensitivities
-                P(obj.nf, k) = Pk;
-                P(obj.np, k) = 0;
-                dLdzi = Deigen(P, Lk, obj.edof, K0, M0);
+                % Compute sensitivity of current eigenpair
+                Pfk(obj.nf, 1) = Pk;    % full eigenmode must be used, ie including bcs
+                dLkdzi = Deigen(Pfk, Lk, K0, M0, obj.edof);
                 
                 % Expand space until tolerance is met
                 space_accepted = false;
                 MRD = zeros(1, obj.nbmax);
-                fprintf('%2i\n', k);
                 while ~space_accepted
                     % Add one more basis vector
-                    ui = -cholsolve(obj.Rold, DK*tim1);
+                    ui = -cholsolve(obj.Rold, DK*ti);
                     ti = ui/sqrt(ui'*M*ui);
-                    
-                    vi = ti;
-                    for j = 1:k-1
-                        voj = obj.vecorth(:, j);
-                        vi = vi - (ti'*M*voj)*voj;
-                    end
+                    vi = gsorth(ti, obj.vecorth(:, 1:(k-1)), M);
                     V = [V vi];
-                    tim1 = ti;
                     
                     % Solve reduced problem
                     Kr = V'*K*V;
                     Mr = V'*M*V;
-                    [Pr, Lr] = eigs(Kr, Mr, 1, 'smallestabs');
-                    Pk = V*Pr/sqrt(Pr'*Mr*Pr);
+                    [Pr, Lk] = eigs(Kr, Mr, 1, 'smallestabs');
+                    Pk = (V*Pr)/sqrt(Pr'*Mr*Pr);
                     
                     % Compute sensitivities
-                    P(obj.nf, k) = Pk;
-                    P(obj.np, k) = 0;
-                    L(k, k) = Lr;
-                    dLdzip1 = Deigen(P, Lr, obj.edof, K0, M0);
+                    Pfk(obj.nf, 1) = Pk;
+                    dLkdzip1 = Deigen(Pfk, Lk, K0, M0, obj.edof);
                     
                     % Check condition
-                    relchange = abs((dLdzip1(Iref)) - dLdzi(Iref))./dLdzi(Iref);
-                    maxrelchange = max(relchange);
+                    relchange = abs((dLkdzip1 - dLkdzi)./dLkdzi);
+                    change_measure = geomean(relchange);
                     space_accepted = ...
-                        maxrelchange <= obj.stol || ...
+                        change_measure < obj.stol || ...
                         abs(Pr(end)) < obj.btol || ...
                         size(V, 2) >= obj.nbmax;
                     
                     % Update variables
-                    dLdzi = dLdzip1;
-                    MRD(size(V, 2)) = maxrelchange;
-                    fprintf('%12.8f %12.8f\n', maxrelchange, abs(Pr(end)));
+                    dLkdzi = dLkdzip1;
+                    MRD(size(V, 2)) = change_measure;
                 end
-                dLdz(k, :) = dLdzi;
+                % Insert solution
+                L(k, k) = Lk;
+                Pf(:, k) = Pfk;
+                dLdz(k, :) = dLkdzi;
+                
+                % Update data
                 MRDs{k} = MRD;
                 Prs{k} = Pr;
-            
+                
+                % Log
+                nb = size(V, 2);
+                prq = abs(Pr(end)/Pr(1));
+                mrdend = MRD(nb);
+                fprintf('%2i | %2i %12.6f %12.6f\n', k, nb, mrdend, prq);
+                
                 % Update vectors used in orthogonalization
                 if strcmpi(obj.type_orth, 'current')
                     obj.vecorth(:, k) = Pk;
@@ -170,7 +177,6 @@ classdef EigenSolver < handle
             obj.Kold = K;
             [Pr, Linv] = eigs(M, obj.Rold, obj.ne, 'largestabs', 'IsCholesky', true);
             L = diag(1./diag(Linv));
-            obj.Pold = Pr;
             
             % Normalize wrt mass matrix
             for k = 1:obj.ne
@@ -183,22 +189,15 @@ classdef EigenSolver < handle
             P(obj.np, :) = 0;
             
             % Compute sensitivities
-            dLdz = Deigen(P, L, obj.edof, K0, M0);
+            dLdz = Deigen(P, L, K0, M0, obj.edof);
             
             % Update vectors used in orthogonalization
             if strcmpi(obj.type_orth, 'old')
                 obj.vecorth = P;
             end
+            obj.Pold = P(obj.nf, :);
         end
         
     end
     
-end
-
-function firstCA()
-
-end
-
-function nCA()
-
 end
