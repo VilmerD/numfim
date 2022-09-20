@@ -10,20 +10,20 @@ classdef EigenSolver < handle
         nelm;
         
         % CA variables
-        factfreq = 5;
-        itfact = 11;
-        zfact;
-        alphtol = 10e-2;
+        xfact;
         
         % Orthogonalization vars
         bool_orth = 1;
         type_orth = 'current';
         bool_shift = 0;
         
-        % Tolerance / stop criteria vars
-        nbmax = 6;
-        btol = 1e-3;
-        stol = 1e-3;
+        % Tolerance / stop criteria
+        factfreq = 5;           % Factorization frequency
+        itfact = inf;           % Iterations since factorization
+        nbmax = 4;              % Maximum number of basis vectors
+        alphtol = 5e-2;         % Tolerance in design changes
+        btol = 1e-2;            % Tolerance in y-components
+        stol = 1e-2;            % Tolerance in sensitivity change
         
         % Data
         Kold;
@@ -31,9 +31,7 @@ classdef EigenSolver < handle
         Pold;
         vecorth;
         
-        datapoints = {'Pr', 'relDeltaMax'};
         data;
-        
         
         % Logging
         logger;
@@ -50,33 +48,31 @@ classdef EigenSolver < handle
             obj.nelm = model.nelm;
             obj.ne = ne;
             
-            obj.zfact = zerose(model.nelm, 1);
+            obj.xfact = zerose(model.nelm, 1);
             
             % Data to be saved
-            emptydata = cell(1, numel(obj.datapoints));
-            obj.data = cell2struct(emptydata, obj.datapoints, 2);
-            
-            % Logger
-            
+            obj.data = DataSaver({'zchange', 'schange', 'bchange'});
         end
         
         
-        function [P, L, dLdz] = eigenSM(obj, K, M, K0, M0, zk)
+        function [P, L, dLdz] = eigenSM(obj, K, M, K0, M0, xk)
             % Solves gen. eigenproblem K*V = D*M*V
             Kff = K(obj.nf, obj.nf);
             Mff = M(obj.nf, obj.nf);
             
             % Determine if CA should be used at all
-            alph = dangle(zk, obj.zfact, false);
-            if alph < obj.alphtol && obj.itfact < obj.factfreq
+            s = sang(xk, obj.xfact);
+            if s < obj.alphtol && obj.itfact < obj.factfreq
                 % Build and solve reduced model
                 obj.itfact = obj.itfact+1;
-                [P, L, dLdz] = obj.solveReduced(Kff, Mff, K0, M0, zk);
+                [P, L, dLdz, bchng, schng] = obj.solveReduced(Kff, Mff, K0, M0, xk);
             else
                 % Solve full model
                 obj.itfact = 1;
-                [P, L, dLdz] = obj.solveFull(Kff, Mff, K0, M0, zk);
-                obj.zfact = zk;
+                [P, L, dLdz] = obj.solveFull(Kff, Mff, K0, M0, xk);
+                obj.xfact = xk;
+                bchng = [];
+                schng = [];
             end
             
             % Sorting eigenvalues
@@ -84,20 +80,21 @@ classdef EigenSolver < handle
             L = diag(Ld);
             P = P(:, I);
             dLdz = dLdz(I, :);
+            
+            obj.data.saveData({s, bchng, schng});
         end
         
-        function [Pf, L, dLdz] = solveReduced(obj, K, M, K0, M0, zk)
+        function [Pf, L, dLdz, bchng, schng] = solveReduced(obj, K, M, K0, M0, xk)
             % Solving the reduced problem for each eigenvector
             DK = K-obj.Kold;
             Pf = zeros(obj.ndof, obj.ne);
             Pfk = zeros(obj.ndof, 1);
             L = zeros(obj.ne);
             
-            dLdz = zeros(obj.ne, length(zk));
+            dLdz = zeros(obj.ne, length(xk));
             
-%             Iref = logical((zk > 0.1).*(zk < 0.95));
-            Prs = cell(obj.ne, 1);
-            MRDs = cell(obj.ne, 1);
+            bchng = cell(obj.ne, 1);
+            schng = cell(obj.ne, 1);
             for k = 1:obj.ne
                 % Build first basis vector
                 ui = cholsolve(obj.Rold, M*obj.Pold(:, k));
@@ -117,7 +114,7 @@ classdef EigenSolver < handle
                 
                 % Expand space until tolerance is met
                 space_accepted = false;
-                MRD = zeros(1, obj.nbmax);
+                schange = zeros(1, obj.nbmax);
                 while ~space_accepted
                     % Add one more basis vector
                     ui = -cholsolve(obj.Rold, DK*ti);
@@ -137,15 +134,15 @@ classdef EigenSolver < handle
                     
                     % Check condition
                     relchange = abs((dLkdzip1 - dLkdzi)./dLkdzi);
-                    change_measure = geomean(relchange);
+                    change = geomean(relchange, 2);
                     space_accepted = ...
-                        change_measure < obj.stol || ...
+                        change < obj.stol || ...
                         abs(Pr(end)) < obj.btol || ...
                         size(V, 2) >= obj.nbmax;
                     
                     % Update variables
                     dLkdzi = dLkdzip1;
-                    MRD(size(V, 2)) = change_measure;
+                    schange(size(V, 2)) = change;
                 end
                 % Insert solution
                 L(k, k) = Lk;
@@ -153,13 +150,13 @@ classdef EigenSolver < handle
                 dLdz(k, :) = dLkdzi;
                 
                 % Update data
-                MRDs{k} = MRD;
-                Prs{k} = Pr;
+                schng{k} = schange;
+                bchng{k} = Pr;
                 
                 % Log
                 nb = size(V, 2);
                 prq = abs(Pr(end)/Pr(1));
-                mrdend = MRD(nb);
+                mrdend = schange(nb);
                 fprintf('%2i | %2i %12.6f %12.6f\n', k, nb, mrdend, prq);
                 
                 % Update vectors used in orthogonalization
@@ -168,14 +165,14 @@ classdef EigenSolver < handle
                 end
             end
             
-            obj.data(length(obj.data)+1) = cell2struct({Prs, MRDs}, obj.datapoints, 2);
         end
         
-        function [P, L, dLdz] = solveFull(obj, K, M, K0, M0, zk)
+        function [P, L, dLdz] = solveFull(obj, K, M, K0, M0, ~)
             % Solve full problem
             obj.Rold = chol(K);
             obj.Kold = K;
-            [Pr, Linv] = eigs(M, obj.Rold, obj.ne, 'largestabs', 'IsCholesky', true);
+            [Pr, Linv] = eigs(M, obj.Rold, obj.ne, ...
+                'largestabs', 'IsCholesky', true);
             L = diag(1./diag(Linv));
             
             % Normalize wrt mass matrix
