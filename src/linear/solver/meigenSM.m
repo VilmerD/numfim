@@ -1,27 +1,11 @@
-function [V, D, varargout] = meigenSM(K, M, bc, ne, Kold, R, psi0, s, options)
-% MEIGENSM solves the generalized eigenvalue problem with boundary
-% conditions, and uses CA if right data is supplied
+function [P, L, varargout] = meigenSM(K, M, bc, ne, Kold, R, psi0, s, options)
+% [P, L] MEIGENSM(K, M, bc, ne) finds the first ne eigenvalues to the 
+% generalized eigenvalue problem KP = LMP with boundary conditions bc
 %
-% Input:
-%       K:      Stiffness matrix                                    (n x n)
-%       M:      Mass matrix                                         (n x n)
-%       bc:     Boundary Conditions                                 (m x 2)
-%       k:      Number of eigenvalues to compute                          1
-%       R:      Cholesky Factorization                              (n x n)
-%       Kold:   Old stiffness matrix                                (n x n)
-%       psi0:   Old eigenmodes                                      (n x k)
-%       s:      Number of basis vectors to generate                       1
-%       feig:   Basis generation function
+% [P, L, R] MEIGENSM(K, M, bc, ne) finds the first ne eigenvalues to the 
+% generalized eigenvalue problem KP = LMP with boundary conditions bc where
+% R is the cholesky factorization of the free part of K
 %
-% Output:
-%       V:          Eigenmodes                                      (n x k)
-%       D:          Eigenvalues                                     (k x 1)
-%       varargout:  Contains basis vectors of CA                          1
-%
-% NOTE: - If K, M, bc and k only are supplied the system is solved exactly.
-%       - If R, Kold, psi0, s and feig are supplied in addition to K, M, bc
-%       and k the system is solved using combined approximations method
-%       feig
 %
 
 % Extracting free part of vibrational problem
@@ -37,12 +21,12 @@ Mff = M(nf, nf);
 if nargin == 4
     % Fully
     R = chol(Kff);
-    [Vf, Drec] = eigs(Mff, R, ne, 'largestabs', ...
+    [Pf, Linv] = eigs(Mff, R, ne, 'largestabs', ...
         'IsCholesky', true);
-    D = diag(1./diag(Drec));
+    L = diag(1./diag(Linv));
     for i = 1:ne
-        Vfi = Vf(:, i);
-        Vf(:, i) = Vfi/sqrt(Vfi'*Mff*Vfi);
+        Vfi = Pf(:, i);
+        Pf(:, i) = Vfi/sqrt(Vfi'*Mff*Vfi);
     end
     varargout = {R};
 else
@@ -50,15 +34,17 @@ else
     psi0f = psi0(nf, :);
     dKff = Kff - Kold(nf, nf);
     
-    [Vf, D, deltas, B] = CAeigs(Kff, Mff, ne, R, dKff, psi0f, s, options);
+    [Pf, L, deltas, B] = CAeigs(Kff, Mff, ne, R, dKff, psi0f, s, options);
     varargout = {deltas, B};
 end
+
 % Sorting eigenvalues
-D = reshape(diag(D), ne, 1);
-[D, I] = sort(D, 'ascend');     % OBS
-Vf = Vf(:, I);
+L = reshape(diag(L), ne, 1);
+[Dd, I] = sort(L, 'ascend');     % OBS
+L = diag(Dd);
+Pf = Pf(:, I);
 
 % Making eigenvectors full
-V = zeros(ndof, ne);
-V(nf, :) = Vf;
+P = zeros(ndof, ne);
+P(nf, :) = Pf;
 end
