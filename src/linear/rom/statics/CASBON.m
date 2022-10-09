@@ -1,16 +1,10 @@
-function B = CASBON(R, dK, K, f, s)
-% CASBON computes orthonormal basis vectors for static problem
-%
-% INPUT:
-%       R:      Cholesky factorization of stiffness matrix          (n x n)
-%       dK:     Change in stiffness matrix                          (n x n)
-%       K:      Stiffness matrix                                    (n x m)
-%       f:      Right hand side                                     (n x 1)    
-%       s:      Number of basis vectors to generate                 1
+function [V, B] = CASBON(R, dK, K, f, s)
+% V = CASBON(R, dK, K, f, s) computes s orthonormal basis vectors using CA for
+% the static problem K*u = f. R is the cholesky factorization of the old
+% stiffness matrix Kold = K + dK.
 % 
-% OUTPUT:
-%       V:      Basis vectors                                       (n x s)
-%
+% B contains the intermediate basis vectors which are required for a
+% consistent sensitivity analysis
 
 % Compute first basis vector 
 ui = R\(R'\f);
@@ -41,4 +35,6 @@ for i = 2:s
     Rb(:, i) = ri;
     V(:, i) = vi;
 end
-B = {U, T, Rb, V};
+
+B = {U, T, Rb};
+end

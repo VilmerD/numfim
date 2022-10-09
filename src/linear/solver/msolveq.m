@@ -1,25 +1,12 @@
 function [u, Q, R, varargout] = msolveq(K, f, bc, Kold, R, s)
-% MSOLVEQ solves the linear system of equations with boundary conditions,
-% with the option to use CA if R, Kold and s are supplied
+% [u, Q, R] = MSOLVEQ(K, f, bc) solves the linear system of equations 
+% K*u = f with boundary conditions bc. Q are the reaction forces and R is
+% the cholesky factorization of the free part of K.
 %
-% Input:
-%       K:      Stiffness matrix                                    (n x n)
-%       f:      Forces                                              (n x 1)
-%       bc:     Boundary Conditions                                 (m x 2)
-%       R:      Cholesky Factorization                              (n x n)
-%       Kold:   Old stiffness matrix                                (n x n)
-%       s:      Number of basis vectors to generate                       1
-%
-% Output:
-%       u:          Displacements                                   (n x 1)
-%       Q:          Forces                                          (n x 1)
-%       R:          Cholesky factorization                          (n x n)
-%       varargout:  Contains basis vectors of CA                          1
-%
-% NOTE: - If K, f and bc only are supplied the system is solved exactly.
-%       - If R, Kold and s are supplied in addition to K, f, and bc the
-%       system is solved using combined approximations with basis
-%       orthonormalization (CASBON)
+% [u, Q, R, B] = MSOLVEQ(K, f, bc, Kold, R, s) approximates the solution u
+% to the linear system of equations using CA. Kold is the stiffness matrix
+% corresponding to the cholesky facotorization R. s orthonormal basis
+% vectors are computed using CASBON
 %
 
 % If bc is empty just solve directly
@@ -50,9 +37,8 @@ if nargin == 3
 else
     % Using CA
     dK = Kff - Kold(nf, nf);
-    B = CASBON(R, dK, Kff, ff, s);
-    U = B{end};
-    uf = U*(U'*ff);
+    [V, B] = CASBON(R, dK, Kff, ff, s);
+    uf = V*(V'*ff);
     varargout = {B};
 end
 

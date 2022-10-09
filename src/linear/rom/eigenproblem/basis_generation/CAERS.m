@@ -1,18 +1,6 @@
 function B = CAERS(R, dK, K, M, psi0, s)
-% CAS computes basis vectors for the reduced eigenproblem using Rayleigh -
-% shifted CA
-%
-% INPUT:
-%       R:      Cholesky factorization of stiffness matrix          (n x n)
-%       dK:     Change in stiffness matrix                          (n x n)
-%       K:      Stiffness matrix                                    (n x n)
-%       M:      Mass matrix                                         (n x n)    
-%       psi0:   Previous eigenvector                                (n x 1)
-%       s:      Number of basis vectors to generate                       1
-% 
-% OUTPUT:
-%       B:      Basis vectors                                             2
-%
+% CAERS computes basis vectors for the reduced eigenproblem using Rayleigh
+% shift
 
 % First basis vector
 ui = R\(R'\(M*psi0));
@@ -31,3 +19,4 @@ for i = 2:s
 end
 
 B = {U, V};
+end

@@ -1,18 +1,6 @@
 function B = CAEEON(R, dK, K, M, psim, s)
-% CABON computes basis vectors for the reduced eigenproblem using CA
+% CAEEON computes basis vectors for the reduced eigenproblem using CA
 % and orthogonalizes (Grahm-Schmidt) them to the eigenvectors in psi0
-%
-% INPUT:
-%       R:      Cholesky factorization of stiffness matrix          (n x n)
-%       dK:     Change in stiffness matrix                          (n x n)
-%       K:      Stiffness matrix                                    (n x n)
-%       M:      Mass matrix                                         (n x n)    
-%       psim:   Previous and lower order eigenvectors               (n x m)     
-%       s:      Number of basis vectors to generate                       1 
-% 
-% OUTPUT:
-%       B:      Basis vectors                                             3
-%
 
 psi0 = psim(:, 1);
 psi = psim(:, 2:end);
