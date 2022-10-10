@@ -3,8 +3,8 @@ function [V, B] = CASBON(R, dK, K, f, s)
 % the static problem K*u = f. R is the cholesky factorization of the old
 % stiffness matrix Kold = K + dK.
 % 
-% B contains the intermediate basis vectors which are required for a
-% consistent sensitivity analysis
+% [V, B] = CASBON(R, dK, K, f, s) computes the basis vectors and returns the 
+% intermediate basis vectors required for a consistent sensitivity analysis.
 
 % Compute first basis vector 
 ui = R\(R'\f);

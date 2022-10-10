@@ -1,18 +1,13 @@
-function B = CAEEON(R, dK, K, M, psim, s)
-% CAEEON computes basis vectors for the reduced eigenproblem using CA
-% and orthogonalizes (Grahm-Schmidt) them to the eigenvectors in psi0
+function [V, B] = CAEEON(R, dK, K, M, psi0, vectors, s)
+% The number of vectors to orthogonalize to
+m = size(vectors, 2);
 
-psi0 = psim(:, 1);
-psi = psim(:, 2:end);
-mm1 = size(psi, 2);
-
-% Compute basis vectors
-% Compute first basis vector 
+% Compute first basis vector
 ui = R\(R'\(M*psi0));
 ti = ui/sqrt(ui'*M*ui);
 vi = ti;
-for j = 1:mm1
-    psij = psi(:, j);
+for j = 1:m
+    psij = vectors(:, j);
     vi = vi - (ti'*M*psij)*psij;
 end
 U = ui;
@@ -22,11 +17,14 @@ V = vi;
 % Compute remaining basis vectors
 for i = 2:s
     ui = -R\(R'\(dK*ti));
+    
+    % Normalize
     ti = ui/sqrt(ui'*M*ui);
     
+    % Orthogonalize
     vi = ti;
-    for j = 1:mm1
-        psij = psi(:, j);
+    for j = 1:m
+        psij = vectors(:, j);
         vi = vi - (ti'*M*psij)*psij;
     end
     
@@ -35,4 +33,7 @@ for i = 2:s
     V(:, i) = vi;
 end
 
-B = {U, T, V};
+% Return all basis vectors, which is required for a consistent sensitivity
+% analysis
+B = {U, T};
+end

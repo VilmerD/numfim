@@ -55,12 +55,6 @@ classdef EigenSolver < handle
         function [P, L, dLdz] = eigenSM(obj, K, M, xk, sensfun)
             % Solves gen. eigenproblem K*V = D*M*V
             % Check if problem has been solved already
-            if ~isempty(obj.xprev) && norm(xk - obj.xprev) == 0
-                P = obj.Pprev;
-                L = obj.Lprev;
-                dLdz = obj.dLdzprev;
-                return;
-            end
             Kff = K(obj.nf, obj.nf); Mff = M(obj.nf, obj.nf);
             
             % Compute the angle to the previous factorization
@@ -86,9 +80,6 @@ classdef EigenSolver < handle
             
             % Saving data
             obj.xprev = xk;
-            obj.Pprev = P;
-            obj.Lprev = L;
-            obj.dLdzprev = dLdz;
             obj.data.saveData({s, bchng, schng});
         end
         
