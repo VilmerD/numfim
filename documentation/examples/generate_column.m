@@ -170,4 +170,4 @@ supnodes = intersect(supnodes1,supnodes2);
 supdofs2 = 2*supnodes;
 supdofs = union(supdofs1,supdofs2);
 alldofs = 1:2*size(nodelist_clean,1);
-freedofs = setdiff(alldofs,supdofs);
+freedofs = setdiff(alldofs,supdofs)';

@@ -1,10 +1,10 @@
-function [V, D, deltas, B] = CAeigs(K, M, n, R, dK, psi0, s, options)
-% CAeigs(K, M, n, R, dK, psi0, s, options) finds the n eigenparis of the
+function [P, L, d, V_INTR] = CAeigs(A, B, n, Rold, Bold, Pold, s, options)
+% CAeigs(A, B, n, Rold, Bold, Pold, s, options) finds the n eigenparis of the
 % generalized eigenvalue problem correspodning to the n eigenvalues with
-% the smallest absolute value.
+% the largest absolute value.
 % 
-% R is the cholesky factorization, dK is the change in stiffness matrix,
-% psi0 are the old eigenvectors and s is the number of basis vectors to use.
+% R is the cholesky factorization of Bold, an older version of B 
+% Pold are the old eigenvectors and s is the number of basis vectors to use.
 % 
 % Finally options is a struct containing the orthotype and orthovecs
 % 
@@ -17,44 +17,44 @@ function [V, D, deltas, B] = CAeigs(K, M, n, R, dK, psi0, s, options)
 % If orthotype is NONE or otherwise, CA does not do basis
 % orthogonalization.
 
-V = zeros(size(K, 1), n);
-D = zeros(n, n);
-deltas = -1*ones(n, 1);
-B = cell(n, 2);
+P = zeros(size(A, 1), n);
+L = zeros(n, n);
+d = -1*ones(n, 1);
+V_INTR = cell(n, 4);
 for k = 1:n
     % Choose if orthogonalization is to be used and which vectors to
     % orthogonalize with respect to
     switch upper(options.orthotype)
         case 'CURRENT'
-            vectors = V(:, 1:(k-1));
+            VO = P(:, 1:(k-1));
         case 'OLD'
-            vectors = options.orthovecs(:, 1:(k - 1));
+            VO = options.orthovecs(:, 1:(k - 1));
         otherwise
-            vectors = [];
+            VO = [];
     end
     
     % Generate basis vectors
-    [Vk, Bk] = CAEEON(R, dK, K, M, psi0(:, k), vectors, s);    
-    % Compute reduced model
-    KR = Vk'*K*Vk;
-    MR = Vk'*M*Vk;
+    [Vk, Uk, Tk] = CAEEON(A, B, Rold, Bold, Pold(:, k), s, VO);
     
-    % Solve reduced model
-    [yk, dk] = eigs(KR, MR, 1, 'smallestabs', ...
+    % Compute reduced model
+    A_RED = Vk'*A*Vk;
+    B_RED = Vk'*B*Vk;
+    
+    % Solve reduced problem
+    [P_RED, L_RED] = eigs(A_RED, B_RED, 1, 'largestabs', ...
         'IsCholesky', false);
     
-    % Normalize the eigenvectors with respect to the mass matrix
-    yk = yk/sqrt(yk'*MR*yk);                    
-    psik = Vk*yk;
+    % Normalize the eigenvectors with respect to A
+    P_RED = P_RED/sqrt(P_RED'*B_RED*P_RED);                    
+    P_FULL = Vk*P_RED;
     
     % Insert solution
-    V(:, k) = psik;                             
-    D(k, k) = dk;
-    B{k, 1} = Bk;
-    B{k, 2} = yk;
+    P(:, k) = P_FULL;                             
+    L(k, k) = L_RED;
+    V_INTR(k, :) = {Uk, Tk, Vk, P_RED};
     
     % Compute the residual of the eigenproblem
-    deltas(k) = norm(K*psik - dk*M*psik)/norm(K*psik);
+    d(k) = norm(A*P_FULL - L_RED*B*P_FULL)/norm(A*P_FULL);
 end
 
 end

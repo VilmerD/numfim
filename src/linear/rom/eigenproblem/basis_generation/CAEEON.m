@@ -1,14 +1,15 @@
-function [V, B] = CAEEON(R, dK, K, M, psi0, vectors, s)
+function [V, U, T] = CAEEON(A, B, Rold, Bold, Pold, s, VO)
 % The number of vectors to orthogonalize to
-m = size(vectors, 2);
+m = size(VO, 2);
+dB = B - Bold;
 
 % Compute first basis vector
-ui = R\(R'\(M*psi0));
-ti = ui/sqrt(ui'*M*ui);
+ui = Rold\(Rold'\(A*Pold));
+ti = ui/sqrt(abs(ui'*B*ui));
 vi = ti;
 for j = 1:m
-    psij = vectors(:, j);
-    vi = vi - (ti'*M*psij)*psij;
+    vj = VO(:, j);
+    vi = vi - (ti'*A*vj)*vj;
 end
 U = ui;
 T = ti;
@@ -16,24 +17,20 @@ V = vi;
 
 % Compute remaining basis vectors
 for i = 2:s
-    ui = -R\(R'\(dK*ti));
+    ui = -Rold\(Rold'\(dB*ti));
     
     % Normalize
-    ti = ui/sqrt(ui'*M*ui);
+    ti = ui/sqrt(abs(ui'*B*ui));
     
     % Orthogonalize
     vi = ti;
     for j = 1:m
-        psij = vectors(:, j);
-        vi = vi - (ti'*M*psij)*psij;
+        vj = VO(:, j);
+        vi = vi - (ti'*A*vj)*vj;
     end
     
     U(:, i) = ui;
     T(:, i) = ti;
     V(:, i) = vi;
 end
-
-% Return all basis vectors, which is required for a consistent sensitivity
-% analysis
-B = {U, T};
 end

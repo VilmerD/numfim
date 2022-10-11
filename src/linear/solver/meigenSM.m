@@ -1,13 +1,13 @@
-function [P, L, varargout] = meigenSM(K, M, bc, ne, Kold, R, psi0, s, options)
-% [P, L] = MEIGENSM(K, M, bc, ne) finds the first ne eigenvalues to the 
-% generalized eigenvalue problem KP = LMP with homogeneous boundary 
+function [P, L, varargout] = meigenSM(A, B, bc, ne, Rold, Bold, Pold, s, options)
+% [P, L] = MEIGENSM(A, B, bc, ne) finds the first ne eigenvalues to the 
+% generalized eigenvalue problem (A+xB)v = 0 with homogeneous boundary 
 % conditions bc
 %
-% [P, L, R] = MEIGENSM(K, M, bc, ne) finds the first ne eigenvalues to the 
+% [P, L, R] = MEIGENSM(A, B, bc, ne) finds the first ne eigenvalues to the 
 % generalized eigenvalue problem and returns R, the cholesky factorization 
 % of the free part of K
 %
-% [P, L, deltas, B] = MEIGENSM(K, M, bc, ne, Kold, R, psi0, s, options)
+% [P, L, d, B] = MEIGENSM(A, B, bc, ne, Rold, Bold, Pold, s, options)
 % finds the first ne eigenvalues using CA. Kold is the stiffness matrix
 % corresponding to the factorization R and the eigenmodes psi0. CA uses s
 % basis vectors to compute the eigenvalues, and options is a struct
@@ -16,44 +16,39 @@ function [P, L, varargout] = meigenSM(K, M, bc, ne, Kold, R, psi0, s, options)
 %
 
 % Extracting free part of vibrational problem
-ndof = size(K, 1);
+ndof = size(A, 1);
 nf = (1:ndof)';
 np = bc(:, 1);
 nf(np) = [];
 
-Kff = K(nf, nf);
-Mff = M(nf, nf);
+Aff = A(nf, nf);
+Bff = B(nf, nf);
 
 % Solving generalized eigenvalue problem
-if nargin == 4
-    % Solve the problem using cholesky factorization. MATLAB's eigs expects
-    % the right hand side to be factorized, so we instead solve
-    % M*V = (lambda)^(-1)K*V for the eigenparis whose eigenvalues have the
-    % largest absolute value
-    
-    R = chol(Kff);
-    [Pf, Linv] = eigs(Mff, R, ne, 'largestabs', ...
+if nargin <= 5
+    % Solve the problem using cholesky factorization. 
+    if nargin < 5
+        Rcurr = chol(Aff);
+    else
+        Rcurr = Rold;
+    end
+    [Pf, L] = eigs(Aff, Rcurr, ne, 'largestabs', ...
         'IsCholesky', true);
-    L = diag(1./diag(Linv));
     
     % Normalize with respect to the mass matrix
-    Pf = Pf./sqrt(dot(Pf, M*Pf));
+    Pf = Pf./sqrt(dot(Pf, Bff*Pf));
     
     % Typically the user wants the cholesky factorization
-    varargout = {R};
+    varargout = {Rcurr};
 else
     % Solve the problem using a reduced order model if the proper
-    % parameters are supplied
-    psi0f = psi0(nf, :);
-    dKff = Kff - Kold(nf, nf);
-    
-    [Pf, L, deltas, B] = CAeigs(Kff, Mff, ne, R, dKff, psi0f, s, options);
-    varargout = {deltas, B};
+    [Pf, L, d, B] = CAeigs(Aff, Bff, ne, Rold, Bold(nf, nf), Pold(nf, :), s, options);
+    varargout = {d, B};
 end
 
 % Sorting eigenvalues in ascending order
 L = reshape(diag(L), ne, 1);
-[Ld, I] = sort(L, 'ascend');
+[Ld, I] = sort(L, 'descend');
 L = diag(Ld);
 Pf = Pf(:, I);
 

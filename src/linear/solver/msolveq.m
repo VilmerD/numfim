@@ -1,56 +1,59 @@
-function [u, Q, R, varargout] = msolveq(K, f, bc, Kold, R, s)
-% [u, Q, R] = MSOLVEQ(K, f, bc) solves the linear system of equations 
-% K*u = f with boundary conditions bc. Q are the reaction forces and R is
+function [x, b, varargout] = msolveq(A, b, bc, Rold, Aold, s)
+% [x, b, R] = MSOLVEQ(A, b, bc) solves the linear system of equations 
+% A*x = b with boundary conditions bc. Q are the reaction forces and R is
 % the cholesky factorization of the free part of K.
 %
-% [u, Q, R, B] = MSOLVEQ(K, f, bc, Kold, R, s) approximates the solution u
-% to the linear system of equations using CA. Kold is the stiffness matrix
-% corresponding to the cholesky facotorization R. s orthonormal basis
-% vectors are computed using CASBON
+% [x, b, R] = MSOLVEQ(A, b, bc, R) solves the linear system of equations 
+% where R is the cholesky factorization of A.
+%
+% [x, b, U, T, R, V] = MSOLVEQ(A, b, bc, Rold, Aold, s) approximates the 
+% solution u to the linear system of equations using CA. Kold is the 
+% stiffness matrix corresponding to the cholesky facotorization R. s 
+% orthonormal basis vectors are computed using CASBON
 %
 
 % If bc is empty just solve directly
 if isempty(bc)
-    R = chol(K);
-    u = R\(R'\f);
-    Q = f;
+    Rcurr = chol(A);
+    x = Rcurr\(Rcurr'\b);
     return
 end
 
 % Split up the system into free and prescribed nodes
-ndof = size(K, 1);
+ndof = size(A, 1);
 nf = (1:ndof)';
 np = bc(:, 1);
 nf(np) = [];
 
-Kff = K(nf, nf);
-Kfp = K(nf, np);
-Kpp = K(np, np);
-up = bc(:, 2);
-ff = f(nf) - Kfp*up;
+Aff = A(nf, nf);
+
+xp = bc(:, 2);
+bf = b(nf) - A(nf, np)*xp;
 
 % Solving free system
-if nargin == 3
+if nargin <= 4
     % Exactly
-    R = chol(Kff);
-    uf = R\(R'\(ff));
+    if nargin < 4
+        Rcurr = chol(Aff);
+    else
+        Rcurr = Rold;
+    end
+    xf = Rcurr\(Rcurr'\bf);
+    varargout = {Rcurr};
 else
     % Using CA
-    dK = Kff - Kold(nf, nf);
-    [V, B] = CASBON(R, dK, Kff, ff, s);
-    uf = V*(V'*ff);
-    varargout = {B};
+    [V, U, T, R] = CASBON(Aff, bf, Rold, Aold(nf, nf), s);
+    xf = V*(V'*bf);
+    varargout = {U, T, R, V};
 end
 
 % Reassembling the solution
-u = zeros(ndof, 1);
-u(np) = up;
-u(nf) = uf;
+x = zeros(ndof, 1);
+x(np) = xp;
+x(nf) = xf;
 
-f = zeros(ndof, 1);
-fp = Kfp'*uf + Kpp*up;
-f(np) = fp;
-f(nf) = ff;
-
-Q = f;
+% Prescribed forces and reaction forces
+b = zeros(ndof, 1);
+b(np) = A(np, nf)*xf + A(np, np)*xp;
+b(nf) = bf;
 end
